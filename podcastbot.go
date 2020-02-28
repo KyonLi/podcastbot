@@ -117,7 +117,7 @@ func download(u string, channelID int64) *AudioFile {
 			Title:     title,
 			Artist:    vid.Uploader,
 			Duration:  int(vid.Duration.Seconds()),
-			Desc:      title + "\n\n" + vid.Description,
+			Desc:      vid.Title,
 			ChannelID: channelID,
 		}
 	} else {
@@ -127,7 +127,7 @@ func download(u string, channelID int64) *AudioFile {
 }
 
 func upload(a *AudioFile) {
-	cmd := exec.Command("telegram-upload", "--to", HelperName, "--title", a.Title, "--performer", a.Artist, "--duration", strconv.Itoa(a.Duration), "-d", a.Path)
+	cmd := exec.Command("telegram-upload", "--to", HelperName, "--title", a.Title, "--performer", a.Artist, "--duration", strconv.Itoa(a.Duration), "--caption", a.Desc, "-d", a.Path)
 	//log.Printf("run: %s %s\n", cmd.Path, cmd.Args)
 	_, err := cmd.CombinedOutput()
 	//log.Print(string(out))
