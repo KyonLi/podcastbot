@@ -9,12 +9,15 @@ import (
 	"os"
 	"os/exec"
 	"sort"
+	"strconv"
 	"strings"
 )
 
-const BotToken = ""
-
-var Bot *tgbotapi.BotAPI
+const (
+	BotToken     = ""
+	HelperName   = ""
+	HelperChatID = 0
+)
 
 var ChannelMap = map[string]int64{}
 
@@ -123,6 +126,19 @@ func download(u string, channelID int64) *AudioFile {
 	}
 }
 
+func upload(a *AudioFile) {
+	cmd := exec.Command("telegram-upload", "--to", HelperName, "--title", a.Title, "--performer", a.Artist, "--duration", strconv.Itoa(a.Duration), "-d", a.Path)
+	//log.Printf("run: %s %s\n", cmd.Path, cmd.Args)
+	_, err := cmd.CombinedOutput()
+	//log.Print(string(out))
+	if err != nil {
+		log.Println("upload failed", err)
+		os.Remove(a.Path)
+	} else {
+		log.Println("upload success")
+	}
+}
+
 func runWebApi() {
 	http.HandleFunc("/podcastbot", func(w http.ResponseWriter, r *http.Request) {
 		jsonData := make(map[string]string)
@@ -140,7 +156,7 @@ func runWebApi() {
 				go func(u string, cid string) {
 					a := download(u, ChannelMap[cid])
 					if a != nil {
-						sendAudio(a)
+						upload(a)
 					}
 				}(u, cid)
 				w.WriteHeader(http.StatusOK)
@@ -164,21 +180,28 @@ func initBot() {
 		log.Fatal("failed to init bot", err)
 	}
 	bot.Debug = false
-	Bot = bot
-}
 
-func sendAudio(a *AudioFile) {
-	msg := tgbotapi.NewAudioUpload(a.ChannelID, a.Path)
-	msg.Title = a.Title
-	msg.Performer = a.Artist
-	msg.Duration = a.Duration
-	msg.Caption = cutCaption(a.Desc)
-	Bot.Send(msg)
-	os.Remove(a.Path)
+	log.Printf("Authorized on account %s", bot.Self.UserName)
+
+	u := tgbotapi.NewUpdate(0)
+	u.Timeout = 60
+
+	updates, err := bot.GetUpdatesChan(u)
+	if err != nil {
+		log.Fatal("failed to init bot", err)
+	}
+
+	for update := range updates {
+		if update.Message != nil && update.Message.Chat.ID == HelperChatID && update.Message.Audio != nil {
+			msg := tgbotapi.NewAudioShare(ChannelMap["1"], update.Message.Audio.FileID)
+			msg.Caption = update.Message.Caption
+			bot.Send(msg)
+		}
+	}
 }
 
 func main() {
 	createTempDir()
-	initBot()
+	go initBot()
 	runWebApi()
 }
