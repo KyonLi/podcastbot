@@ -13,21 +13,13 @@ import (
 	"strings"
 )
 
-const (
-	BotToken     = ""
-	HelperName   = ""
-	HelperChatID = 0
-)
-
-var ChannelMap = map[string]int64{}
-
 type AudioFile struct {
-	Path      string
-	Title     string
-	Artist    string
-	Duration  int
-	Desc      string
-	ChannelID int64
+	Path      string `json:"-"`
+	Title     string `json:"title"`
+	Artist    string `json:"artist"`
+	Duration  int    `json:"duration"`
+	Desc      string `json:"desc"`
+	ChannelID int64  `json:"channel_id"`
 }
 
 func createTempDir() {
@@ -127,9 +119,16 @@ func download(u string, channelID int64) *AudioFile {
 }
 
 func upload(a *AudioFile) {
-	cmd := exec.Command("telegram-upload", "--to", HelperName, "--title", a.Title, "--performer", a.Artist, "--duration", strconv.Itoa(a.Duration), "--caption", a.Desc, "-d", a.Path)
+	//generate metadata json string
+	jsonBytes, err := json.Marshal(a)
+	if err != nil {
+		log.Println("upload failed", err)
+		os.Remove(a.Path)
+		return
+	}
+	cmd := exec.Command("telegram-upload", "--to", HelperName, "--title", a.Title, "--performer", a.Artist, "--duration", strconv.Itoa(a.Duration), "--caption", string(jsonBytes), "-d", a.Path)
 	//log.Printf("run: %s %s\n", cmd.Path, cmd.Args)
-	_, err := cmd.CombinedOutput()
+	_, err = cmd.CombinedOutput()
 	//log.Print(string(out))
 	if err != nil {
 		log.Println("upload failed", err)
@@ -140,7 +139,7 @@ func upload(a *AudioFile) {
 }
 
 func runWebApi() {
-	http.HandleFunc("/podcastbot", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc(APIPath, func(w http.ResponseWriter, r *http.Request) {
 		jsonData := make(map[string]string)
 		err := json.NewDecoder(r.Body).Decode(&jsonData)
 		if err != nil {
@@ -149,19 +148,22 @@ func runWebApi() {
 			w.Write([]byte("bad request"))
 			return
 		}
-		u, ok := jsonData["url"]
-		if ok && u != "" {
-			cid, ok := jsonData["cid"]
-			if ok && cid != "" {
-				go func(u string, cid string) {
-					a := download(u, ChannelMap[cid])
-					if a != nil {
-						upload(a)
-					}
-				}(u, cid)
-				w.WriteHeader(http.StatusOK)
-				w.Write([]byte("ok"))
-				return
+		t, ok := jsonData["token"]
+		if ok && t == APIToken {
+			u, ok := jsonData["url"]
+			if ok && u != "" {
+				cid, ok := jsonData["cid"]
+				if ok && cid != "" {
+					go func(u string, cid string) {
+						a := download(u, ChannelMap[cid])
+						if a != nil {
+							upload(a)
+						}
+					}(u, cid)
+					w.WriteHeader(http.StatusOK)
+					w.Write([]byte("ok"))
+					return
+				}
 			}
 		}
 		log.Print("invalid request body", jsonData)
@@ -193,8 +195,14 @@ func initBot() {
 
 	for update := range updates {
 		if update.Message != nil && update.Message.Chat.ID == HelperChatID && update.Message.Audio != nil {
-			msg := tgbotapi.NewAudioShare(ChannelMap["1"], update.Message.Audio.FileID)
-			msg.Caption = update.Message.Caption
+			var a AudioFile
+			err := json.Unmarshal([]byte(update.Message.Caption), &a)
+			if err != nil {
+				log.Print("invalid caption", err)
+				continue
+			}
+			msg := tgbotapi.NewAudioShare(a.ChannelID, update.Message.Audio.FileID)
+			msg.Caption = a.Desc
 			bot.Send(msg)
 		}
 	}
