@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type AudioFile struct {
@@ -138,6 +139,23 @@ func upload(a *AudioFile) {
 	}
 }
 
+func DoTask(u string, cid string, retryCount int) {
+	a := download(u, ChannelMap[cid])
+	if a != nil {
+		upload(a)
+	} else {
+		if retryCount < 2 {
+			//retry after 10 minutes
+			log.Print("will retry download", u, "after 10 minutes")
+			time.AfterFunc(10 * time.Minute, func() {
+				DoTask(u, cid, retryCount + 1)
+			})
+		} else {
+			log.Print("retried download", u, retryCount, "times, giving up")
+		}
+	}
+}
+
 func runWebApi() {
 	http.HandleFunc(APIPath, func(w http.ResponseWriter, r *http.Request) {
 		jsonData := make(map[string]string)
@@ -154,12 +172,7 @@ func runWebApi() {
 			if ok && u != "" {
 				cid, ok := jsonData["cid"]
 				if ok && cid != "" {
-					go func(u string, cid string) {
-						a := download(u, ChannelMap[cid])
-						if a != nil {
-							upload(a)
-						}
-					}(u, cid)
+					go DoTask(u, cid, 0)
 					w.WriteHeader(http.StatusOK)
 					w.Write([]byte("ok"))
 					return
