@@ -151,7 +151,7 @@ func DoTask(u string, cid string, retryCount int) {
 				DoTask(u, cid, retryCount + 1)
 			})
 		} else {
-			log.Print("retried download", u, retryCount, "times, giving up")
+			log.Print("retried download ", u, " ", retryCount, " times, giving up")
 		}
 	}
 }
@@ -183,7 +183,7 @@ func runWebApi() {
 		w.WriteHeader(http.StatusBadRequest)
 		w.Write([]byte("bad request"))
 	})
-	err := http.ListenAndServe(":9090", nil)
+	err := http.ListenAndServe("127.0.0.1:9090", nil)
 	if err != nil {
 		log.Fatal("ListenAndServe: ", err)
 	}
